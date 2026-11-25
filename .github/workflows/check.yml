@@ -1,0 +1,36 @@
+name: Check Nautilus flake
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v32
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check locked packages
+        run: nix flake check --no-update-lock-file --print-build-logs
+      - name: Verify the Omron CLI and the upstream source override
+        shell: bash
+        run: |
+          omron="$(nix build .#naut --no-link --print-out-paths)"
+          "$omron/bin/naut" --help | grep -F 'naut omron'
+          rev="$(jq -er '.nodes["nautilus-upstream"].locked.rev' flake.lock)"
+          upstream="$(nix build .#upstream --no-link --print-out-paths)"
+          alternate="$(nix build .#naut --override-input nautilus "github:joyautomation/nautilus/$rev" --no-link --print-out-paths)"
+          test "$alternate" = "$upstream"
+          "$alternate/bin/naut" --version
