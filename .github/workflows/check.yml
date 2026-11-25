@@ -2,7 +2,7 @@ name: Check Nautilus flake
 
 on:
   push:
-    branches: [main]
+    branches: [main, vscode-extension]
   pull_request:
   workflow_dispatch:
 
@@ -34,3 +34,13 @@ jobs:
           alternate="$(nix build .#naut --override-input nautilus "github:joyautomation/nautilus/$rev" --no-link --print-out-paths)"
           test "$alternate" = "$upstream"
           "$alternate/bin/naut" --version
+      - name: Verify that the extension uses the overridden Nautilus source
+        if: matrix.runner == 'ubuntu-latest'
+        shell: bash
+        run: |
+          rev="$(jq -er '.nodes["nautilus-upstream"].locked.rev' flake.lock)"
+          pkg="$(nix build .#vscode-extension --override-input nautilus "github:joyautomation/nautilus/$rev" --no-link --print-out-paths)"
+          cli="$(nix build .#upstream --no-link --print-out-paths)/bin/naut"
+          jq -e --arg cli "$cli" \
+            '.contributes.configuration.properties["nautilus.cliPath"].default == $cli' \
+            "$pkg/share/vscode/extensions/joyauto.vscode-iec/package.json"

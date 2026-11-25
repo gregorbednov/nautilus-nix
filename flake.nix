@@ -99,6 +99,10 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          extension = self.packages.${system}.vscode-extension;
+          extensionIndex = pkgs.writeText "nautilus-vscode-extensions.json" (
+            pkgs.vscode-utils.toExtensionJson [ extension ]
+          );
           smoke = name: package: pkgs.runCommand "nautilus-${name}-smoke" { } ''
             ${lib.getExe package} --version > "$out"
             grep -F 'nautilus ' "$out"
@@ -106,7 +110,15 @@
         in {
           naut = smoke "omron" self.packages.${system}.naut;
           upstream = smoke "upstream" self.packages.${system}.upstream;
-          vscode-extension = self.packages.${system}.vscode-extension;
+          vscode-extension = pkgs.runCommand "nautilus-vscode-extension-check" {
+            nativeBuildInputs = [ pkgs.jq ];
+          } ''
+            asset="${extension}/share/vscode/extensions/joyauto.vscode-iec"
+            jq -e --arg path "$asset" \
+              'length == 1 and .[0].identifier.id == "joyauto.vscode-iec" and .[0].location.fsPath == $path' \
+              ${extensionIndex} > "$out"
+            test -s "$asset/package.json"
+          '';
         }
       );
     };
