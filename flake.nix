@@ -1,5 +1,5 @@
 {
-  description = "Nautilus CLI with a selectable source branch";
+  description = "Nautilus CLI and VS Code extension with a selectable source branch";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -52,6 +52,11 @@
           }
         ) { };
 
+      makeExtension = pkgs: naut: import ./vscode-extension.nix {
+        inherit pkgs naut;
+        src = nautilus;
+      };
+
       asApp = package: {
         type = "app";
         program = lib.getExe package;
@@ -66,8 +71,21 @@
           default = naut;
           naut = makeNaut pkgs nautilus;
           upstream = makeNaut pkgs nautilus-upstream;
+          vscode-extension = makeExtension pkgs naut;
         }
       );
+
+      legacyPackages = eachSystem (system: {
+        vscode-extensions.joyauto.vscode-iec = self.packages.${system}.vscode-extension;
+      });
+
+      overlays.default = final: prev: {
+        vscode-extensions = prev.vscode-extensions // {
+          joyauto = (prev.vscode-extensions.joyauto or { }) // {
+            vscode-iec = makeExtension final (makeNaut final nautilus);
+          };
+        };
+      };
 
       apps = eachSystem (
         system: {
@@ -81,6 +99,10 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          extension = self.packages.${system}.vscode-extension;
+          extensionIndex = pkgs.writeText "nautilus-vscode-extensions.json" (
+            pkgs.vscode-utils.toExtensionJson [ extension ]
+          );
           smoke = name: package: pkgs.runCommand "nautilus-${name}-smoke" { } ''
             ${lib.getExe package} --version > "$out"
             grep -F 'nautilus ' "$out"
@@ -88,6 +110,15 @@
         in {
           naut = smoke "omron" self.packages.${system}.naut;
           upstream = smoke "upstream" self.packages.${system}.upstream;
+          vscode-extension = pkgs.runCommand "nautilus-vscode-extension-check" {
+            nativeBuildInputs = [ pkgs.jq ];
+          } ''
+            asset="${extension}/share/vscode/extensions/joyauto.vscode-iec"
+            jq -e --arg path "$asset" \
+              'length == 1 and .[0].identifier.id == "joyauto.vscode-iec" and .[0].location.fsPath == $path' \
+              ${extensionIndex} > "$out"
+            test -s "$asset/package.json"
+          '';
         }
       );
     };

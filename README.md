@@ -39,6 +39,43 @@ Use `inputs.nautilus-nix.packages.${system}.naut` in your configuration. To
 refresh a locked branch in a local checkout of this repository, run
 `nix flake update nautilus` or `nix flake update nautilus-upstream`.
 
+## VS Code extension
+
+Build the extension as a Nix package:
+
+```sh
+nix build github:gregorbednov/nautilus-nix#vscode-extension
+nix build github:gregorbednov/nautilus-nix#vscode-extensions.joyauto.vscode-iec
+```
+
+Both outputs install `joyauto.vscode-iec` in the standard VS Code extension
+directory. The extension defaults `nautilus.cliPath` to the `naut` binary
+from the same selected source. The `--override-input nautilus` option and
+the nested input configuration above apply to both the CLI and the extension.
+
+With Home Manager, use the flake's overlay with your Nixpkgs instance:
+
+```nix
+nixpkgs.overlays = [ inputs.nautilus-nix.overlays.default ];
+programs.vscode = {
+  enable = true;
+  profiles.default.extensions = [ pkgs.vscode-extensions.joyauto.vscode-iec ];
+};
+```
+
+If a source branch changes an npm lockfile, add its cache hash to
+`npm-hashes.json`. The `npmInputsKeys` and `npmCaches` attributes expose
+the lockfile keys and cache derivations. For example, to update webview
+dependencies in a local checkout:
+
+```sh
+nix eval --raw .#vscode-extension.npmInputsKeys.webview
+nix build .#vscode-extension.npmCaches.webview --no-link
+```
+
+Register the key printed by the first command with the `got:` hash printed
+by the second. The other cache names are `extension`, `hmi`, and `hmi3d`.
+
 ## When Go dependencies change
 
 Branches with the same `go.mod` and `go.sum` share a Go module cache hash.
