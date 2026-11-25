@@ -1,0 +1,46 @@
+name: Resolve VS Code dependency hashes
+
+on:
+  push:
+    branches: [vscode-extension]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v32
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prefetch the locked npm projects
+        shell: bash
+        run: |
+          for project in extension hmi hmi3d webview; do
+            key="$(nix eval --raw ".#vscode-extension.npmInputsKeys.$project")"
+            if jq -e --arg key "$key" 'has($key)' npm-hashes.json >/dev/null; then
+              continue
+            fi
+            log="$(mktemp)"
+            if nix build --no-link ".#vscode-extension.npmCaches.$project" >"$log" 2>&1; then
+              echo "Expected a hash mismatch for the new npm cache" >&2
+              exit 1
+            fi
+            hash="$(sed -nE 's/^[[:space:]]*got:[[:space:]]+(sha256-[A-Za-z0-9+/=]+).*/\1/p' "$log" | tail -1)"
+            if [[ -z "$hash" ]]; then
+              cat "$log"
+              exit 1
+            fi
+            jq --arg key "$key" --arg hash "$hash" '. + {($key): $hash}' npm-hashes.json > hashes.tmp
+            mv hashes.tmp npm-hashes.json
+          done
+      - name: Build the extension
+        run: nix build .#vscode-extensions.joyauto.vscode-iec --no-link --print-build-logs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nautilus-vscode-hashes
+          path: npm-hashes.json

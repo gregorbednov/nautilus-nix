@@ -1,5 +1,5 @@
 {
-  description = "Nautilus CLI with a selectable source branch";
+  description = "Nautilus CLI and VS Code extension with a selectable source branch";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -52,6 +52,11 @@
           }
         ) { };
 
+      makeExtension = pkgs: naut: import ./vscode-extension.nix {
+        inherit pkgs naut;
+        src = nautilus;
+      };
+
       asApp = package: {
         type = "app";
         program = lib.getExe package;
@@ -66,8 +71,21 @@
           default = naut;
           naut = makeNaut pkgs nautilus;
           upstream = makeNaut pkgs nautilus-upstream;
+          vscode-extension = makeExtension pkgs naut;
         }
       );
+
+      legacyPackages = eachSystem (system: {
+        vscode-extensions.joyauto.vscode-iec = self.packages.${system}.vscode-extension;
+      });
+
+      overlays.default = final: prev: {
+        vscode-extensions = prev.vscode-extensions // {
+          joyauto = (prev.vscode-extensions.joyauto or { }) // {
+            vscode-iec = makeExtension final (makeNaut final nautilus);
+          };
+        };
+      };
 
       apps = eachSystem (
         system: {
@@ -88,6 +106,7 @@
         in {
           naut = smoke "omron" self.packages.${system}.naut;
           upstream = smoke "upstream" self.packages.${system}.upstream;
+          vscode-extension = self.packages.${system}.vscode-extension;
         }
       );
     };
